@@ -150,6 +150,13 @@ function storage(): Storage | null {
   }
 }
 
+/** Телефон или планшет: мобильный браузер с сенсорным экраном (iPadOS представляется как Mac). */
+function isMobileDevice(): boolean {
+  const ua = navigator.userAgent;
+  const mobileUA = /Android|iPhone|iPad|iPod|Mobi|Mobile/i.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
+  return mobileUA && window.matchMedia("(pointer: coarse)").matches;
+}
+
 function recentlyDismissed(): boolean {
   const at = Number(storage()?.getItem(DISMISS_KEY) || 0);
   return Date.now() - at < DISMISS_DAYS * 86_400_000;
@@ -162,7 +169,8 @@ export function InstallPrompt({ siteName }: { siteName: string }) {
   const [showSteps, setShowSteps] = useState(false);
 
   useEffect(() => {
-    if (!mode || recentlyDismissed()) return;
+    // окно — только на телефонах и планшетах; на компьютере остаётся кнопка в подвале
+    if (!mode || !isMobileDevice() || recentlyDismissed()) return;
     const store = storage();
     const visits = Number(store?.getItem(VISITS_KEY) || 0) + 1;
     store?.setItem(VISITS_KEY, String(visits));
