@@ -25,9 +25,11 @@ export function SectionHeader({ title, href, linkLabel = "Смотреть вс�
 
 export function ProductRail({ products }: { products: Product[] }) {
   return (
-    <div className="scrollbar-none -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-x-5 sm:gap-y-10 sm:overflow-visible sm:px-0 xl:grid-cols-4">
+    // На телефоне — горизонтальная лента: scroll-px держит отступ от края экрана при прокрутке,
+    // ширина карточки подобрана так, чтобы следующая выглядывала и было понятно, что ленту можно листать.
+    <div className="scrollbar-none -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto overscroll-x-contain px-4 pb-1 sm:mx-0 sm:grid sm:snap-none sm:scroll-px-0 sm:grid-cols-3 sm:gap-x-5 sm:gap-y-10 sm:overflow-visible sm:px-0 sm:pb-0 xl:grid-cols-4">
       {products.map((p) => (
-        <div key={p.id} className="w-[46vw] max-w-64 shrink-0 snap-start sm:w-auto sm:max-w-none">
+        <div key={p.id} className="w-[calc((100vw-2.75rem)/2.3)] max-w-64 shrink-0 snap-start sm:w-auto sm:max-w-none">
           <ProductCard product={p} />
         </div>
       ))}

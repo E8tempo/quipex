@@ -22,3 +22,12 @@ frontend/out/
 # прочее
 .DS_Store
 *.log
+*.pem
+docker-compose.override.yml
+
+# IDE и кеши инструментов
+.idea/
+.vscode/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
