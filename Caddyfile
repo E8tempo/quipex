@@ -1,0 +1,24 @@
+# Адрес сайта берётся из SITE_ADDRESS в .env:
+#   cvipex.ru, www.cvipex.ru  → автоматический HTTPS (Let's Encrypt)
+#   :80                       → обычный HTTP (по IP или за другим прокси)
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	request_body {
+		max_size 50MB
+	}
+
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle_path /media/* {
+		root * /srv/media
+		header Cache-Control "public, max-age=2592000"
+		file_server
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

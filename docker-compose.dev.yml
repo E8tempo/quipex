@@ -1,0 +1,16 @@
+# Только база данных для локальной разработки: make dev-db
+# Бэкенд и фронтенд запускаются на хосте с горячей перезагрузкой (make dev-api / make dev-web).
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: cvipex
+      POSTGRES_PASSWORD: cvipex
+      POSTGRES_DB: cvipex
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+
+volumes:
+  pgdata_dev:
