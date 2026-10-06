@@ -1,11 +1,13 @@
+name: quipex
+
 services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-cvipex}
+      POSTGRES_USER: ${POSTGRES_USER:-quipex}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
-      POSTGRES_DB: ${POSTGRES_DB:-cvipex}
+      POSTGRES_DB: ${POSTGRES_DB:-quipex}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

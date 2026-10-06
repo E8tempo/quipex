@@ -11,7 +11,7 @@
 
 ```bash
 # 1. Скопировать проект на сервер, перейти в папку
-cd cvipex
+cd quipex
 
 # 2. Создать конфиг и заполнить значения с пометкой «ОБЯЗАТЕЛЬНО»
 cp .env.example .env
@@ -25,8 +25,8 @@ docker compose up -d --build
 
 | Переменная | Что указать |
 |---|---|
-| `SITE_URL` | Адрес сайта, например `https://cvipex.ru` |
-| `SITE_ADDRESS` | Домен(ы) для HTTPS: `"cvipex.ru, www.cvipex.ru"` (или `:80` — без HTTPS, для проверки по IP) |
+| `SITE_URL` | Адрес сайта, например `https://quipex.ru` |
+| `SITE_ADDRESS` | Домен(ы) для HTTPS: `"quipex.ru, www.quipex.ru"` (или `:80` — без HTTPS, для проверки по IP) |
 | `POSTGRES_PASSWORD` | Пароль БД |
 | `SECRET_KEY` | Случайная строка: `openssl rand -hex 32` |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Логин и пароль первого администратора |
@@ -87,7 +87,7 @@ docker compose pull && docker compose up -d --build   # обновление п�
 docker compose exec backend python -m app.cli create-admin email@site.ru 'новый-пароль'   # сброс пароля админа
 
 # резервная копия БД
-docker compose exec db pg_dump -U cvipex cvipex > backup.sql
+docker compose exec db pg_dump -U quipex quipex > backup.sql
 ```
 
 Данные хранятся в Docker-томах: `pgdata` (БД), `media` (фото), `caddy_data` (сертификаты).

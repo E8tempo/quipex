@@ -38,9 +38,9 @@ class Settings(BaseSettings):
 
     # --- База данных ---
     database_url: str | None = None
-    postgres_user: str = "cvipex"
-    postgres_password: str = "cvipex"
-    postgres_db: str = "cvipex"
+    postgres_user: str = "quipex"
+    postgres_password: str = "quipex"
+    postgres_db: str = "quipex"
     postgres_host: str = "db"
     postgres_port: int = 5432
     db_echo: bool = False
@@ -51,10 +51,10 @@ class Settings(BaseSettings):
     # access-токен короткий, refresh-токен длинный и ротируется при каждом обновлении
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
-    admin_access_cookie: str = "cvipex_admin_at"
-    admin_refresh_cookie: str = "cvipex_admin_rt"
-    customer_access_cookie: str = "cvipex_at"
-    customer_refresh_cookie: str = "cvipex_rt"
+    admin_access_cookie: str = "quipex_admin_at"
+    admin_refresh_cookie: str = "quipex_admin_rt"
+    customer_access_cookie: str = "quipex_at"
+    customer_refresh_cookie: str = "quipex_rt"
     admin_email: str | None = None
     admin_password: str | None = None
     login_max_attempts: int = 10

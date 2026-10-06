@@ -21,7 +21,7 @@ export const useAccount = create<AccountState>()((set) => ({
     usePersonalPrices.getState().reset();
   },
   load: async () => {
-    if (!document.cookie.split("; ").some((c) => c === "cvipex_at_in=1")) {
+    if (!document.cookie.split("; ").some((c) => c === "quipex_at_in=1")) {
       set({ customer: null, loaded: true });
       return null;
     }

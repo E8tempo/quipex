@@ -50,7 +50,7 @@ export const useCart = create<CartState>()(
           return { items: s.items.map((i) => (map.has(i.id) ? { ...i, product: map.get(i.id)! } : i)) };
         }),
     }),
-    { name: "cvipex-cart", partialize: (s) => ({ items: s.items }) },
+    { name: "quipex-cart", partialize: (s) => ({ items: s.items }) },
   ),
 );
 
@@ -81,8 +81,8 @@ function idListStore(name: string, limit: number) {
   );
 }
 
-export const useFavorites = idListStore("cvipex-favorites", 200);
-export const useCompare = idListStore("cvipex-compare", 6);
+export const useFavorites = idListStore("quipex-favorites", 200);
+export const useCompare = idListStore("quipex-compare", 6);
 
 interface RecentState {
   ids: number[];
@@ -95,7 +95,7 @@ export const useRecent = create<RecentState>()(
       ids: [],
       push: (id) => set((s) => ({ ids: [id, ...s.ids.filter((x) => x !== id)].slice(0, 12) })),
     }),
-    { name: "cvipex-recent" },
+    { name: "quipex-recent" },
   ),
 );
 

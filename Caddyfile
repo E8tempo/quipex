@@ -1,5 +1,5 @@
 # Адрес сайта берётся из SITE_ADDRESS в .env:
-#   cvipex.ru, www.cvipex.ru  → автоматический HTTPS (Let's Encrypt)
+#   quipex.ru, www.quipex.ru  → автоматический HTTPS (Let's Encrypt)
 #   :80                       → обычный HTTP (по IP или за другим прокси)
 {$SITE_ADDRESS::80} {
 	encode zstd gzip

@@ -11,7 +11,7 @@ from app.exchange import commerceml
 
 router = APIRouter(prefix="/1c", tags=["1c-exchange"])
 
-SESSION_COOKIE = "cvipex_1c"
+SESSION_COOKIE = "quipex_1c"
 _sessions: set[str] = set()
 
 

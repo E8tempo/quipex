@@ -1,6 +1,7 @@
 import { Header } from "@/components/shop/header";
 import { Footer } from "@/components/shop/footer";
 import { CartQuoteSync, CartSheet } from "@/components/shop/cart";
+import { InstallPrompt } from "@/components/common/pwa";
 import { AccountSync } from "@/lib/stores/account";
 import { getCategoryTree, getSettings } from "@/lib/site";
 
@@ -14,6 +15,7 @@ export default async function ShopLayout({ children }: LayoutProps<"/">) {
       <CartSheet wholesaleMinQty={settings.wholesale_min_qty} wholesaleMinSum={settings.wholesale_min_order_sum} />
       <CartQuoteSync />
       <AccountSync />
+      <InstallPrompt siteName={settings.site_name} />
     </>
   );
 }
