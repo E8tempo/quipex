@@ -2,10 +2,11 @@
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+import random
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +21,7 @@ from app.services.site_settings import get_all_settings
 log = logging.getLogger(__name__)
 
 MAX_LOG_CHARS = 60_000
+MSK = timezone(timedelta(hours=3))
 HIGHLIGHT_EXCLUDE = {"артикул", "комплектация", "цвет", "особенности"}
 
 
@@ -48,6 +50,14 @@ class ImportRunner:
     ) -> ImportJob:
         if cls.is_running():
             raise RuntimeError("Импорт уже выполняется")
+        last = await cls.last_started_at()
+        cooldown = timedelta(minutes=settings.parser_min_interval_minutes)
+        if last and datetime.now(UTC) - last < cooldown:
+            left = int((last + cooldown - datetime.now(UTC)).total_seconds() // 60) + 1
+            raise RuntimeError(
+                f"Импорт запускался недавно — подождите ещё {left} мин, "
+                "чтобы источник не заблокировал сервер за частые запросы"
+            )
         async with SessionLocal() as session:
             job = ImportJob(status=ImportStatus.pending, mode=mode, trigger=trigger, log="")
             session.add(job)
@@ -56,6 +66,14 @@ class ImportRunner:
         dl = settings.parser_download_images if download_images is None else download_images
         cls._current_task = asyncio.create_task(cls(job.id, mode, dl).run())
         return job
+
+    @staticmethod
+    async def last_started_at() -> datetime | None:
+        async with SessionLocal() as session:
+            last = (await session.execute(select(func.max(ImportJob.started_at)))).scalar()
+        if last and last.tzinfo is None:
+            last = last.replace(tzinfo=UTC)
+        return last
 
     @classmethod
     async def mark_stale_jobs(cls) -> None:
@@ -465,15 +483,28 @@ class ImportRunner:
 
 
 async def auto_sync_loop() -> None:
-    """Периодическая синхронизация по расписанию (PARSER_AUTO_SYNC_HOURS > 0)."""
-    interval = settings.parser_auto_sync_hours * 3600
-    if interval <= 0:
+    """Периодическая синхронизация по расписанию (PARSER_AUTO_SYNC_HOURS > 0).
+
+    Отсчёт идёт от последнего импорта в БД, а не от старта процесса: перезапуски и деплои
+    не вызывают лишних проходов по источнику. Суточный импорт — ночью в PARSER_AUTO_SYNC_HOUR
+    по Москве, со случайной задержкой, чтобы запросы не приходили минута в минуту.
+    """
+    hours = settings.parser_auto_sync_hours
+    if hours <= 0:
         return
-    await asyncio.sleep(60)
     while True:
+        await asyncio.sleep(600)
         try:
-            if not ImportRunner.is_running():
-                await ImportRunner.start(mode="full", trigger="schedule")
+            if ImportRunner.is_running():
+                continue
+            last = await ImportRunner.last_started_at()
+            if last and datetime.now(UTC) - last < timedelta(hours=hours) - timedelta(hours=1):
+                continue
+            if hours >= 24 and datetime.now(MSK).hour != settings.parser_auto_sync_hour:
+                continue
+            await asyncio.sleep(random.uniform(0, 1800))
+            await ImportRunner.start(mode="full", trigger="schedule")
+        except asyncio.CancelledError:
+            raise
         except Exception:  # noqa: BLE001
             log.exception("Scheduled import failed to start")
-        await asyncio.sleep(interval)

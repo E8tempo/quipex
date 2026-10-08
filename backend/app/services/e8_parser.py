@@ -9,6 +9,7 @@
 import asyncio
 import json
 import logging
+import random
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -24,7 +25,7 @@ from app.core.utils import parse_price
 log = logging.getLogger(__name__)
 
 RETRY_STATUSES = {429, 502, 503, 504}
-BLOCK_THRESHOLD = 15
+BLOCK_THRESHOLD = 5
 
 
 def describe_error(exc: BaseException | None) -> str:
@@ -121,15 +122,19 @@ class E8Parser:
                 try:
                     resp = await self.client.get(url)
                     if settings.parser_delay_seconds:
-                        await asyncio.sleep(settings.parser_delay_seconds)
+                        await asyncio.sleep(settings.parser_delay_seconds * random.uniform(0.5, 1.5))
                     if resp.status_code == 404:
                         raise FileNotFoundError(url)
+                    if resp.status_code == 403:
+                        # запрет доступа: повторы только усугубят блокировку
+                        self.consecutive_failures += 1
+                        raise RuntimeError(f"Не удалось загрузить {url}: HTTP 403 (доступ запрещён)")
                     if resp.status_code in RETRY_STATUSES:
                         wait = max(wait, self._retry_after(resp))
                     resp.raise_for_status()
                     self.consecutive_failures = 0
                     return resp
-                except FileNotFoundError:
+                except (FileNotFoundError, RuntimeError):
                     raise
                 except (httpx.HTTPError, httpx.StreamError) as exc:
                     last_exc = exc

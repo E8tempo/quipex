@@ -72,11 +72,13 @@ class Settings(BaseSettings):
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/130.0 Safari/537.36"
     )
-    parser_concurrency: int = 2
-    parser_delay_seconds: float = 0.7
+    parser_concurrency: int = 1
+    parser_delay_seconds: float = 1.5
     parser_timeout_seconds: float = 30
     parser_download_images: bool = True
     parser_auto_sync_hours: float = 0
+    parser_auto_sync_hour: int = 4  # час запуска по Москве (для интервала от 24 ч)
+    parser_min_interval_minutes: int = 30
     parser_skip_categories: str = ""
 
     # --- Обмен с 1С (CommerceML, «Обмен с сайтом») ---
