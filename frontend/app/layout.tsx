@@ -25,17 +25,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fdfdfd" },
-    { media: "(prefers-color-scheme: dark)", color: "#16171a" },
-  ],
+  themeColor: "#fdfdfd",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ru" suppressHydrationWarning className={`${onest.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster position="top-center" richColors closeButton />
           <ServiceWorkerRegister />
