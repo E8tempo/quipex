@@ -498,6 +498,18 @@ class ImportStart(BaseModel):
     download_images: bool | None = None
 
 
+class ImportSchedule(BaseModel):
+    enabled: bool
+    mode: Literal["full", "prices"] = "full"
+    every_hours: Literal[6, 12, 24, 48, 72, 168] = 24
+    hour: int = Field(4, ge=0, le=23)
+
+
+class ImportScheduleOut(ImportSchedule):
+    next_run: datetime | None = None
+    min_interval_minutes: int
+
+
 class ImportJobOut(ORM):
     id: int
     status: ImportStatus

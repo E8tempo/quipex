@@ -318,6 +318,15 @@ export interface ImportJob {
   created_at: string;
 }
 
+export interface ImportSchedule {
+  enabled: boolean;
+  mode: "full" | "prices";
+  every_hours: number;
+  hour: number;
+  next_run?: string | null;
+  min_interval_minutes: number;
+}
+
 export interface Dashboard {
   orders_total: number;
   orders_new: number;

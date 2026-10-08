@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_session
 from app.core.security import ADMIN, CurrentUser, SuperUser, hash_password, revoke_subject
 from app.models import (
@@ -28,6 +29,8 @@ from app.schemas import (
     DashboardOut,
     DayPoint,
     ImportJobOut,
+    ImportSchedule,
+    ImportScheduleOut,
     ImportStart,
     OrderListItem,
     PageIn,
@@ -37,7 +40,7 @@ from app.schemas import (
     UserUpdate,
 )
 from app.services import media
-from app.services.importer import ImportRunner
+from app.services.importer import ImportRunner, next_auto_run, schedule_from_settings
 from app.services.site_settings import DEFAULTS, get_all_settings, update_settings
 
 router = APIRouter(tags=["admin:system"])
@@ -173,6 +176,34 @@ async def import_start(data: ImportStart, _: CurrentUser) -> ImportJob:
         return await ImportRunner.start(mode=data.mode, download_images=data.download_images)
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
+
+
+async def _schedule_out(session: AsyncSession) -> ImportScheduleOut:
+    schedule = schedule_from_settings(await get_all_settings(session))
+    return ImportScheduleOut(
+        **schedule,
+        next_run=next_auto_run(schedule, await ImportRunner.last_started_at()),
+        min_interval_minutes=settings.parser_min_interval_minutes,
+    )
+
+
+@router.get("/import/schedule", response_model=ImportScheduleOut)
+async def import_schedule(session: Session, _: CurrentUser) -> ImportScheduleOut:
+    return await _schedule_out(session)
+
+
+@router.put("/import/schedule", response_model=ImportScheduleOut)
+async def import_schedule_update(data: ImportSchedule, session: Session, _: SuperUser) -> ImportScheduleOut:
+    await update_settings(
+        session,
+        {
+            "import_auto_enabled": data.enabled,
+            "import_auto_mode": data.mode,
+            "import_auto_every_hours": data.every_hours,
+            "import_auto_hour": data.hour,
+        },
+    )
+    return await _schedule_out(session)
 
 
 @router.post("/import/jobs/{job_id}/cancel")
