@@ -2,10 +2,11 @@
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+import random
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +21,7 @@ from app.services.site_settings import get_all_settings
 log = logging.getLogger(__name__)
 
 MAX_LOG_CHARS = 60_000
+MSK = timezone(timedelta(hours=3))
 HIGHLIGHT_EXCLUDE = {"артикул", "комплектация", "цвет", "особенности"}
 
 
@@ -48,6 +50,14 @@ class ImportRunner:
     ) -> ImportJob:
         if cls.is_running():
             raise RuntimeError("Импорт уже выполняется")
+        last = await cls.last_started_at()
+        cooldown = timedelta(minutes=settings.parser_min_interval_minutes)
+        if last and datetime.now(UTC) - last < cooldown:
+            left = int((last + cooldown - datetime.now(UTC)).total_seconds() // 60) + 1
+            raise RuntimeError(
+                f"Импорт запускался недавно — подождите ещё {left} мин, "
+                "чтобы источник не заблокировал сервер за частые запросы"
+            )
         async with SessionLocal() as session:
             job = ImportJob(status=ImportStatus.pending, mode=mode, trigger=trigger, log="")
             session.add(job)
@@ -56,6 +66,14 @@ class ImportRunner:
         dl = settings.parser_download_images if download_images is None else download_images
         cls._current_task = asyncio.create_task(cls(job.id, mode, dl).run())
         return job
+
+    @staticmethod
+    async def last_started_at() -> datetime | None:
+        async with SessionLocal() as session:
+            last = (await session.execute(select(func.max(ImportJob.started_at)))).scalar()
+        if last and last.tzinfo is None:
+            last = last.replace(tzinfo=UTC)
+        return last
 
     @classmethod
     async def mark_stale_jobs(cls) -> None:
@@ -104,6 +122,12 @@ class ImportRunner:
     def _check_cancel(self) -> None:
         if self.job_id in self._cancel_requested:
             raise ImportCancelled()
+        if self.parser.blocked:
+            raise RuntimeError(
+                "Источник перестал отвечать (много ошибок подряд) — похоже, ограничил доступ "
+                "по частоте запросов. Импорт остановлен, товары не сняты с публикации. "
+                "Повторите позже или уменьшите PARSER_CONCURRENCY / увеличьте PARSER_DELAY_SECONDS."
+            )
 
     async def run(self) -> None:
         async with self._lock, SessionLocal() as session:
@@ -215,8 +239,10 @@ class ImportRunner:
             return_exceptions=True,
         )
         items: dict[str, ParsedListItem] = {}
+        listing_failed = False
         for cat, res in zip(parsed_cats, listings, strict=True):
             if isinstance(res, BaseException):
+                listing_failed = True
                 self.stats["errors"] += 1
                 self.log(f"Ошибка загрузки категории {cat.name}: {res}")
                 continue
@@ -246,6 +272,7 @@ class ImportRunner:
                 return item, None, [], exc
 
         seen_urls: set[str] = set()
+        failed_urls: set[str] = set()
         done = 0
         queue = list(items.values())
         batch_size = max(2, settings.parser_concurrency * 2)
@@ -255,6 +282,8 @@ class ImportRunner:
             for item, parsed, images, err in results:
                 done += 1
                 if err or not parsed:
+                    if not isinstance(err, FileNotFoundError):
+                        failed_urls.add(item.url)
                     self.stats["errors"] += 1
                     self.log(f"Ошибка {item.url}: {err}")
                     continue
@@ -269,7 +298,10 @@ class ImportRunner:
             self.log(f"Обработано {done} из {len(queue)}")
             await self._save(session, progress=done)
 
-        await self._deactivate_missing(session, seen_urls)
+        if listing_failed:
+            self.log("Часть категорий не загрузилась — снятие отсутствующих товаров пропущено")
+        else:
+            await self._deactivate_missing(session, seen_urls | failed_urls)
         self.log(
             "Итог: создано {products_created}, обновлено {products_updated}, "
             "снято с публикации {products_deactivated}, фото {images_downloaded}, ошибок {errors}".format(
@@ -451,15 +483,28 @@ class ImportRunner:
 
 
 async def auto_sync_loop() -> None:
-    """Периодическая синхронизация по расписанию (PARSER_AUTO_SYNC_HOURS > 0)."""
-    interval = settings.parser_auto_sync_hours * 3600
-    if interval <= 0:
+    """Периодическая синхронизация по расписанию (PARSER_AUTO_SYNC_HOURS > 0).
+
+    Отсчёт идёт от последнего импорта в БД, а не от старта процесса: перезапуски и деплои
+    не вызывают лишних проходов по источнику. Суточный импорт — ночью в PARSER_AUTO_SYNC_HOUR
+    по Москве, со случайной задержкой, чтобы запросы не приходили минута в минуту.
+    """
+    hours = settings.parser_auto_sync_hours
+    if hours <= 0:
         return
-    await asyncio.sleep(60)
     while True:
+        await asyncio.sleep(600)
         try:
-            if not ImportRunner.is_running():
-                await ImportRunner.start(mode="full", trigger="schedule")
+            if ImportRunner.is_running():
+                continue
+            last = await ImportRunner.last_started_at()
+            if last and datetime.now(UTC) - last < timedelta(hours=hours) - timedelta(hours=1):
+                continue
+            if hours >= 24 and datetime.now(MSK).hour != settings.parser_auto_sync_hour:
+                continue
+            await asyncio.sleep(random.uniform(0, 1800))
+            await ImportRunner.start(mode="full", trigger="schedule")
+        except asyncio.CancelledError:
+            raise
         except Exception:  # noqa: BLE001
             log.exception("Scheduled import failed to start")
-        await asyncio.sleep(interval)
