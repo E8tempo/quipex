@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { create } from "zustand";
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ProductImage } from "@/components/shop/product-card";
 import { apiPost } from "@/lib/api-client";
 import { plural, price } from "@/lib/format";
 import { useAccount } from "@/lib/stores/account";
-import { useCart, useHydrated } from "@/lib/stores/shop";
+import { MAX_QTY, useCart, useHydrated } from "@/lib/stores/shop";
 import type { Quote } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ const useQuoteStore = create<{ quote: Quote | null; loading: boolean; key: strin
 export function CartQuoteSync() {
   const items = useCart((s) => s.items);
   const refresh = useCart((s) => s.refresh);
+  const removeMissing = useCart((s) => s.removeMissing);
   const who = useAccount((s) => (s.loaded ? `${s.customer?.id ?? 0}:${s.customer?.is_partner ? 1 : 0}` : "?"));
   const key = useMemo(() => `${who}|` + items.map((i) => `${i.id}:${i.qty}`).join(","), [items, who]);
 
@@ -46,6 +48,13 @@ export function CartQuoteSync() {
           if (cancelled) return;
           useQuoteStore.setState({ quote: q, key });
           refresh(q.items.map((l) => l.product));
+          // сняты с продажи — иначе висят в корзине со старой ценой, а в заказ молча не попадают
+          if (q.missing.length) {
+            const names = removeMissing(q.missing);
+            toast.warning(
+              names.length === 1 ? `Товар «${names[0]}» больше не продаётся и удалён из корзины` : `${names.length} ${plural(names.length, ["товар", "товара", "товаров"])} больше не продаются и удалены из корзины`,
+            );
+          }
         })
         .catch(() => {})
         .finally(() => !cancelled && useQuoteStore.setState({ loading: false }));
@@ -54,7 +63,7 @@ export function CartQuoteSync() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [key, who, refresh]);
+  }, [key, who, refresh, removeMissing]);
   return null;
 }
 
@@ -95,9 +104,9 @@ export function QtyStepper({
         inputMode="numeric"
         className="w-10 bg-transparent text-center text-sm font-semibold tabular-nums outline-none"
         value={draft}
-        onChange={(e) => setDraft(e.target.value.replace(/\D/g, "").slice(0, 5))}
+        onChange={(e) => setDraft(e.target.value.replace(/\D/g, "").slice(0, 4))}
         onBlur={() => {
-          const n = Math.max(1, Number(draft) || 1);
+          const n = Math.min(MAX_QTY, Math.max(1, Number(draft) || 1));
           setDraft(String(n));
           onChange(n);
         }}
@@ -107,7 +116,7 @@ export function QtyStepper({
       <button
         type="button"
         className={cn("flex aspect-square items-center justify-center text-muted-foreground hover:text-foreground", h)}
-        onClick={() => onChange(value + 1)}
+        onClick={() => onChange(Math.min(MAX_QTY, value + 1))}
         aria-label="Увеличить"
       >
         <Plus className="size-3.5" />

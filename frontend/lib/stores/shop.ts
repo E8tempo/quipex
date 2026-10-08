@@ -5,6 +5,10 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ProductCard } from "@/lib/types";
 
+/** Больше сервер не примет в одной позиции заказа. */
+export const MAX_QTY = 9999;
+const clampQty = (qty: number) => Math.min(MAX_QTY, qty);
+
 export interface CartItem {
   id: number;
   qty: number;
@@ -20,11 +24,13 @@ interface CartState {
   clear: () => void;
   setOpen: (open: boolean) => void;
   refresh: (products: ProductCard[]) => void;
+  /** Убирает снятые с продажи товары, возвращает их названия. */
+  removeMissing: (ids: number[]) => string[];
 }
 
 export const useCart = create<CartState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       items: [],
       open: false,
       add: (product, qty = 1) =>
@@ -32,14 +38,14 @@ export const useCart = create<CartState>()(
           const existing = s.items.find((i) => i.id === product.id);
           if (existing) {
             return {
-              items: s.items.map((i) => (i.id === product.id ? { ...i, qty: i.qty + qty, product } : i)),
+              items: s.items.map((i) => (i.id === product.id ? { ...i, qty: clampQty(i.qty + qty), product } : i)),
             };
           }
-          return { items: [...s.items, { id: product.id, qty, product }] };
+          return { items: [...s.items, { id: product.id, qty: clampQty(qty), product }] };
         }),
       setQty: (id, qty) =>
         set((s) => ({
-          items: qty <= 0 ? s.items.filter((i) => i.id !== id) : s.items.map((i) => (i.id === id ? { ...i, qty } : i)),
+          items: qty <= 0 ? s.items.filter((i) => i.id !== id) : s.items.map((i) => (i.id === id ? { ...i, qty: clampQty(qty) } : i)),
         })),
       remove: (id) => set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
       clear: () => set({ items: [] }),
@@ -49,6 +55,11 @@ export const useCart = create<CartState>()(
           const map = new Map(products.map((p) => [p.id, p]));
           return { items: s.items.map((i) => (map.has(i.id) ? { ...i, product: map.get(i.id)! } : i)) };
         }),
+      removeMissing: (ids) => {
+        const gone = get().items.filter((i) => ids.includes(i.id));
+        set((s) => ({ items: s.items.filter((i) => !ids.includes(i.id)) }));
+        return gone.map((i) => i.product.name);
+      },
     }),
     { name: "quipex-cart", partialize: (s) => ({ items: s.items }) },
   ),

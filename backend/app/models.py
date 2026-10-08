@@ -16,7 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.core.database import Base, TimestampMixin
 
@@ -80,6 +80,8 @@ class Product(TimestampMixin, Base):
     in_stock: Mapped[bool] = mapped_column(Boolean, default=True)
     stock_qty: Mapped[int | None] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # снят с публикации импортом, потому что пропал с источника; вернётся сам, когда появится снова
+    hidden_by_import: Mapped[bool] = mapped_column(Boolean, default=False)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False)
     is_new: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=500)
@@ -109,6 +111,12 @@ class Product(TimestampMixin, Base):
         order_by="ProductAttribute.sort_order",
         lazy="raise",
     )
+
+    @validates("is_active")
+    def _reset_hidden_by_import(self, _key: str, value: bool) -> bool:
+        # любое явное включение/выключение (в админке) отменяет автоматическое скрытие
+        self.hidden_by_import = False
+        return value
 
 
 class ProductImage(Base):

@@ -14,6 +14,19 @@ import type { DeliveryMethod } from "@/lib/types";
 
 type Settings = Record<string, unknown>;
 
+const NUM_KEYS = ["wholesale_min_qty", "wholesale_min_order_sum", "wholesale_default_discount_percent", "import_price_markup_percent"];
+
+/** Числа храним строкой, пока их редактируют (иначе «2.» сразу превращается в «2»), и приводим при сохранении.
+ *  Расписание импорта редактируется в разделе «Импорт» — не перезаписываем его отсюда. */
+function toPayload(s: Settings): Settings {
+  const out: Settings = {};
+  for (const [k, v] of Object.entries(s)) {
+    if (k.startsWith("import_auto_")) continue;
+    out[k] = NUM_KEYS.includes(k) ? Number(v) || 0 : v;
+  }
+  return out;
+}
+
 function MethodsEditor({ value, onChange }: { value: DeliveryMethod[]; onChange: (v: DeliveryMethod[]) => void }) {
   return (
     <div className="space-y-2">
@@ -50,7 +63,7 @@ export default function SettingsPage() {
   const num = (k: string) => ({
     value: String(s[k] ?? 0),
     inputMode: "decimal" as const,
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setS({ ...s, [k]: Number(e.target.value.replace(",", ".").replace(/[^\d.-]/g, "")) || 0 }),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setS({ ...s, [k]: e.target.value.replace(",", ".").replace(/[^\d.-]/g, "") }),
   });
 
   return (
@@ -166,7 +179,7 @@ export default function SettingsPage() {
             onClick={async () => {
               setSaving(true);
               try {
-                setS(await apiPut<Settings>("/admin/settings", s));
+                setS(await apiPut<Settings>("/admin/settings", toPayload(s)));
                 toast.success("Настройки сохранены. На сайте обновятся в течение минуты.");
               } catch (e) {
                 toast.error(e instanceof Error ? e.message : "Ошибка");

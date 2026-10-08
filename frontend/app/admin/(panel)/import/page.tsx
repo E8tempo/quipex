@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, CircleDollarSign, Loader2, Play, RefreshCw, Square, XCircle } from "lucide-react";
+import { CalendarClock, CheckCircle2, CircleDollarSign, Loader2, Play, RefreshCw, Save, Square, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Loading, PageHeader, Panel, Pill, useApi } from "@/components/admin/ui";
+import { Field, Loading, NativeSelect, PageHeader, Panel, Pill, useApi } from "@/components/admin/ui";
 import { useAdmin } from "@/components/admin/shell";
-import { api, apiPost } from "@/lib/api-client";
+import { api, apiPost, apiPut } from "@/lib/api-client";
 import { dateTime } from "@/lib/format";
-import type { ImportJob } from "@/lib/types";
+import type { ImportJob, ImportSchedule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<ImportJob["status"], { label: string; tone: string }> = {
@@ -81,8 +81,114 @@ function JobView({ job }: { job: ImportJob }) {
   );
 }
 
+const EVERY: { value: number; label: string }[] = [
+  { value: 6, label: "Каждые 6 часов" },
+  { value: 12, label: "Каждые 12 часов" },
+  { value: 24, label: "Раз в сутки" },
+  { value: 48, label: "Раз в 2 дня" },
+  { value: 72, label: "Раз в 3 дня" },
+  { value: 168, label: "Раз в неделю" },
+];
+
+function SchedulePanel({ canEdit, lastJobId }: { canEdit: boolean; lastJobId?: number }) {
+  const { data, setData, reload } = useApi<ImportSchedule>("/admin/import/schedule");
+  const [draft, setDraft] = useState<ImportSchedule | null>(null);
+  const [saving, setSaving] = useState(false);
+  // после нового запуска пересчитываем «следующий запуск»
+  const [seenJob, setSeenJob] = useState(lastJobId);
+  if (seenJob !== lastJobId) {
+    setSeenJob(lastJobId);
+    reload();
+  }
+  if (!data) return null;
+  const s = draft ?? data;
+  const dirty = draft !== null;
+  const set = (patch: Partial<ImportSchedule>) => setDraft({ ...s, ...patch });
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { enabled, mode, every_hours, hour } = s;
+      setData(await apiPut<ImportSchedule>("/admin/import/schedule", { enabled, mode, every_hours, hour }));
+      setDraft(null);
+      toast.success("Расписание сохранено");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Panel
+      title="Автоматический импорт"
+      actions={
+        canEdit && dirty ? (
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="animate-spin" /> : <Save />} Сохранить
+          </Button>
+        ) : null
+      }
+    >
+      <div className="space-y-4">
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>
+            <span className="font-medium">Подтягивать изменения с e8.ru по расписанию</span>
+            <span className="block text-xs text-muted-foreground">
+              Отсчёт идёт от последнего импорта, в том числе ручного. Перезапуск сервера импорт не запускает.
+            </span>
+          </span>
+          <Switch checked={s.enabled} disabled={!canEdit} onCheckedChange={(v) => set({ enabled: v })} />
+        </label>
+        <div className={cn("grid gap-4 sm:grid-cols-3", !s.enabled && "opacity-50")}>
+          <Field label="Что обновлять">
+            <NativeSelect value={s.mode} disabled={!canEdit || !s.enabled} onChange={(e) => set({ mode: e.target.value as ImportSchedule["mode"] })}>
+              <option value="full">Полная синхронизация</option>
+              <option value="prices">Только цены и наличие</option>
+            </NativeSelect>
+          </Field>
+          <Field label="Как часто">
+            <NativeSelect value={s.every_hours} disabled={!canEdit || !s.enabled} onChange={(e) => set({ every_hours: Number(e.target.value) })}>
+              {EVERY.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Во сколько (по Москве)" hint={s.every_hours < 24 ? "Только для запуска раз в сутки и реже" : undefined}>
+            <NativeSelect
+              value={s.hour}
+              disabled={!canEdit || !s.enabled || s.every_hours < 24}
+              onChange={(e) => set({ hour: Number(e.target.value) })}
+            >
+              {Array.from({ length: 24 }, (_, h) => (
+                <option key={h} value={h}>
+                  {String(h).padStart(2, "0")}:00
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+        </div>
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CalendarClock className="size-4 shrink-0" />
+          {dirty
+            ? "Сохраните, чтобы пересчитать следующий запуск"
+            : s.enabled && data.next_run
+              ? `Следующий запуск: ${dateTime(data.next_run)} (± 30 мин)`
+              : "Автоимпорт выключен — только вручную"}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Источник блокирует сервер за слишком частые запросы, поэтому импорт идёт медленно и не чаще раза в {data.min_interval_minutes} мин. Ночное
+          время — наименее заметное.
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
 export default function ImportPage() {
-  const { refreshCounters } = useAdmin();
+  const { user, refreshCounters } = useAdmin();
   const { data: jobs, setData: setJobs, loading, reload } = useApi<ImportJob[]>("/admin/import/jobs");
   const [images, setImages] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -159,6 +265,8 @@ export default function ImportPage() {
           </Button>
         </div>
       </div>
+
+      <SchedulePanel canEdit={user.is_superuser} lastJobId={current?.id} />
 
       {loading && !jobs ? (
         <Loading />

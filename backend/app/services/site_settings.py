@@ -30,6 +30,11 @@ DEFAULTS: dict[str, Any] = {
     "wholesale_default_discount_percent": 10,
     "import_price_markup_percent": 0,
     "import_wholesale_from_retail": True,
+    # расписание автоимпорта (раздел «Импорт»); начальные значения — из .env
+    "import_auto_enabled": settings.parser_auto_sync_hours > 0,
+    "import_auto_mode": "full",
+    "import_auto_every_hours": int(settings.parser_auto_sync_hours or 24),
+    "import_auto_hour": settings.parser_auto_sync_hour,
     "delivery_methods": [
         {"id": "pickup", "title": "Самовывоз со склада", "price": 0},
         {"id": "courier", "title": "Доставка по городу", "price": 0},

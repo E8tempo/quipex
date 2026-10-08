@@ -418,6 +418,9 @@ class ImportRunner:
         product.synced_at = datetime.now(UTC)
         if is_new:
             product.is_active = True
+        elif product.hidden_by_import:
+            product.is_active = True
+            self.log(f"Снова на источнике, возвращён на сайт: {product.name}")
         self._apply_prices(product, parsed.price or item.price, parsed.old_price)
         if product.category_id is None and category:
             product.category_id = category.id
@@ -478,32 +481,57 @@ class ImportRunner:
         for p in missing:
             p.in_stock = False
             p.is_active = False
+            p.hidden_by_import = True  # после is_active: валидатор сбрасывает флаг
         self.stats["products_deactivated"] = len(missing)
         await session.commit()
 
 
-async def auto_sync_loop() -> None:
-    """Периодическая синхронизация по расписанию (PARSER_AUTO_SYNC_HOURS > 0).
+def schedule_from_settings(cfg: dict) -> dict:
+    """Расписание автоимпорта из настроек сайта (редактируется в админке, раздел «Импорт»)."""
+    every = int(cfg.get("import_auto_every_hours") or 24)
+    return {
+        "enabled": bool(cfg.get("import_auto_enabled")),
+        "mode": "prices" if cfg.get("import_auto_mode") == "prices" else "full",
+        "every_hours": max(6, every),
+        "hour": min(23, max(0, int(cfg.get("import_auto_hour") or 0))),
+    }
 
-    Отсчёт идёт от последнего импорта в БД, а не от старта процесса: перезапуски и деплои
-    не вызывают лишних проходов по источнику. Суточный импорт — ночью в PARSER_AUTO_SYNC_HOUR
-    по Москве, со случайной задержкой, чтобы запросы не приходили минута в минуту.
+
+def next_auto_run(schedule: dict, last: datetime | None, now: datetime | None = None) -> datetime | None:
+    """Ближайшее время, когда планировщик запустит импорт (без случайной задержки до 30 мин).
+
+    Отсчёт — от последнего импорта в БД (любого, в том числе ручного), а не от старта процесса:
+    перезапуски и деплои не вызывают лишних проходов по источнику. Интервал от суток — ночью
+    в заданный час по Москве; час допуска, чтобы запуск не «уползал» каждый день на 30 минут.
     """
-    hours = settings.parser_auto_sync_hours
-    if hours <= 0:
-        return
+    if not schedule["enabled"]:
+        return None
+    now = now or datetime.now(UTC)
+    every = schedule["every_hours"]
+    if every < 24:
+        return max(now, last + timedelta(hours=every)) if last else now
+    due = max(now, last + timedelta(hours=every - 1)) if last else now
+    at = due.astimezone(MSK).replace(hour=schedule["hour"], minute=0, second=0, microsecond=0)
+    if at + timedelta(hours=1) <= due:
+        at += timedelta(days=1)
+    return max(at, due)
+
+
+async def auto_sync_loop() -> None:
+    """Проверяет раз в 10 минут, не пора ли запустить импорт по расписанию."""
     while True:
         await asyncio.sleep(600)
         try:
             if ImportRunner.is_running():
                 continue
-            last = await ImportRunner.last_started_at()
-            if last and datetime.now(UTC) - last < timedelta(hours=hours) - timedelta(hours=1):
+            async with SessionLocal() as session:
+                schedule = schedule_from_settings(await get_all_settings(session))
+            at = next_auto_run(schedule, await ImportRunner.last_started_at())
+            if not at or at > datetime.now(UTC):
                 continue
-            if hours >= 24 and datetime.now(MSK).hour != settings.parser_auto_sync_hour:
-                continue
+            # случайная задержка: запросы к источнику не приходят минута в минуту
             await asyncio.sleep(random.uniform(0, 1800))
-            await ImportRunner.start(mode="full", trigger="schedule")
+            await ImportRunner.start(mode=schedule["mode"], trigger="schedule")
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
