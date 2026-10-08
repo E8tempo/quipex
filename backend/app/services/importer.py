@@ -51,7 +51,8 @@ class ImportRunner:
         if cls.is_running():
             raise RuntimeError("Импорт уже выполняется")
         last = await cls.last_started_at()
-        cooldown = timedelta(minutes=settings.parser_min_interval_minutes)
+        # в разработке (DEBUG=true) импорт гоняют много раз подряд — паузу не навязываем
+        cooldown = timedelta(minutes=0 if settings.debug else settings.parser_min_interval_minutes)
         if last and datetime.now(UTC) - last < cooldown:
             left = int((last + cooldown - datetime.now(UTC)).total_seconds() // 60) + 1
             raise RuntimeError(
