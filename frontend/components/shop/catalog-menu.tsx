@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import type { CategoryNode } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -13,11 +13,19 @@ export function CatalogMenu({ categories }: { categories: CategoryNode[] }) {
   const pathname = usePathname();
   const ref = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // нижний край шапки: над ней может быть строка объявления, поэтому меряем, а не берём 4rem
+  const [top, setTop] = useState(64);
   const [prevPath, setPrevPath] = useState(pathname);
   if (prevPath !== pathname) {
     setPrevPath(pathname);
     setOpen(false);
   }
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const header = ref.current?.closest("header");
+    if (header) setTop(Math.max(0, header.getBoundingClientRect().bottom));
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -65,13 +73,17 @@ export function CatalogMenu({ categories }: { categories: CategoryNode[] }) {
         <>
           {/* затемнение страницы под меню; клик по нему закрывает меню */}
           <div
-            className="fixed inset-x-0 top-16 bottom-0 z-30 bg-black/25 backdrop-blur-[2px] animate-in fade-in duration-200"
+            style={{ top }}
+            className="fixed inset-x-0 bottom-0 z-30 bg-black/25 backdrop-blur-[2px] animate-in fade-in duration-200"
             onClick={() => setOpen(false)}
             aria-hidden
           />
           <div className="absolute inset-x-0 top-full z-40 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="container-page pt-2">
-              <div className="grid h-[min(34rem,calc(100dvh-6.5rem))] grid-cols-[16rem_1fr] lg:grid-cols-[20rem_1fr] overflow-hidden rounded-3xl border bg-background shadow-2xl shadow-black/10">
+              <div
+                style={{ height: `min(34rem, calc(100dvh - ${top}px - 2.5rem))` }}
+                className="grid grid-cols-[16rem_1fr] lg:grid-cols-[20rem_1fr] overflow-hidden rounded-3xl border bg-background shadow-2xl shadow-black/10"
+              >
                 <nav className="min-h-0 overflow-y-auto overscroll-contain border-r p-3" onMouseLeave={cancelHover}>
                   {categories.map((c) => (
                     <Link
