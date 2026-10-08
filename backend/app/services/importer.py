@@ -104,6 +104,12 @@ class ImportRunner:
     def _check_cancel(self) -> None:
         if self.job_id in self._cancel_requested:
             raise ImportCancelled()
+        if self.parser.blocked:
+            raise RuntimeError(
+                "Источник перестал отвечать (много ошибок подряд) — похоже, ограничил доступ "
+                "по частоте запросов. Импорт остановлен, товары не сняты с публикации. "
+                "Повторите позже или уменьшите PARSER_CONCURRENCY / увеличьте PARSER_DELAY_SECONDS."
+            )
 
     async def run(self) -> None:
         async with self._lock, SessionLocal() as session:
@@ -215,8 +221,10 @@ class ImportRunner:
             return_exceptions=True,
         )
         items: dict[str, ParsedListItem] = {}
+        listing_failed = False
         for cat, res in zip(parsed_cats, listings, strict=True):
             if isinstance(res, BaseException):
+                listing_failed = True
                 self.stats["errors"] += 1
                 self.log(f"Ошибка загрузки категории {cat.name}: {res}")
                 continue
@@ -246,6 +254,7 @@ class ImportRunner:
                 return item, None, [], exc
 
         seen_urls: set[str] = set()
+        failed_urls: set[str] = set()
         done = 0
         queue = list(items.values())
         batch_size = max(2, settings.parser_concurrency * 2)
@@ -255,6 +264,8 @@ class ImportRunner:
             for item, parsed, images, err in results:
                 done += 1
                 if err or not parsed:
+                    if not isinstance(err, FileNotFoundError):
+                        failed_urls.add(item.url)
                     self.stats["errors"] += 1
                     self.log(f"Ошибка {item.url}: {err}")
                     continue
@@ -269,7 +280,10 @@ class ImportRunner:
             self.log(f"Обработано {done} из {len(queue)}")
             await self._save(session, progress=done)
 
-        await self._deactivate_missing(session, seen_urls)
+        if listing_failed:
+            self.log("Часть категорий не загрузилась — снятие отсутствующих товаров пропущено")
+        else:
+            await self._deactivate_missing(session, seen_urls | failed_urls)
         self.log(
             "Итог: создано {products_created}, обновлено {products_updated}, "
             "снято с публикации {products_deactivated}, фото {images_downloaded}, ошибок {errors}".format(

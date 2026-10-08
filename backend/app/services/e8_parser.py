@@ -23,6 +23,19 @@ from app.core.utils import parse_price
 
 log = logging.getLogger(__name__)
 
+RETRY_STATUSES = {429, 502, 503, 504}
+BLOCK_THRESHOLD = 15
+
+
+def describe_error(exc: BaseException | None) -> str:
+    """Таймауты httpx приходят с пустым текстом — добавляем тип и HTTP-код."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    if exc is None:
+        return "неизвестная ошибка"
+    text = str(exc)
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
 
 @dataclass
 class ParsedCategory:
@@ -68,6 +81,7 @@ class E8Parser:
         self.base = settings.parser_base_url.rstrip("/")
         self.catalog_path = settings.parser_catalog_path
         self._sem = asyncio.Semaphore(max(1, settings.parser_concurrency))
+        self.consecutive_failures = 0
         self.client = httpx.AsyncClient(
             headers={
                 "User-Agent": settings.parser_user_agent,
@@ -98,9 +112,11 @@ class E8Parser:
             self.catalog_path
         )
 
-    async def fetch(self, url: str, retries: int = 3) -> str:
+    async def _get(self, url: str, retries: int = 4) -> httpx.Response:
+        """GET с паузой между запросами и отступлением при ограничении частоты (429/503)."""
         last_exc: Exception | None = None
         for attempt in range(retries):
+            wait = 2.0 * 2**attempt
             async with self._sem:
                 try:
                     resp = await self.client.get(url)
@@ -108,20 +124,37 @@ class E8Parser:
                         await asyncio.sleep(settings.parser_delay_seconds)
                     if resp.status_code == 404:
                         raise FileNotFoundError(url)
+                    if resp.status_code in RETRY_STATUSES:
+                        wait = max(wait, self._retry_after(resp))
                     resp.raise_for_status()
-                    return resp.text
+                    self.consecutive_failures = 0
+                    return resp
                 except FileNotFoundError:
                     raise
                 except (httpx.HTTPError, httpx.StreamError) as exc:
                     last_exc = exc
-            await asyncio.sleep(1.5 * (attempt + 1))
-        raise RuntimeError(f"Не удалось загрузить {url}: {last_exc}")
+            await asyncio.sleep(min(wait, 120))
+        self.consecutive_failures += 1
+        raise RuntimeError(f"Не удалось загрузить {url}: {describe_error(last_exc)}")
+
+    @staticmethod
+    def _retry_after(resp: httpx.Response) -> float:
+        try:
+            return float(resp.headers.get("retry-after", 0))
+        except ValueError:
+            return 0
+
+    @property
+    def blocked(self) -> bool:
+        """Подряд много неудач — источник, скорее всего, ограничил доступ."""
+        return self.consecutive_failures >= BLOCK_THRESHOLD
+
+    async def fetch(self, url: str) -> str:
+        return (await self._get(url)).text
 
     async def fetch_bytes(self, url: str) -> tuple[bytes, str | None]:
-        async with self._sem:
-            resp = await self.client.get(url)
-            resp.raise_for_status()
-            return resp.content, resp.headers.get("content-type")
+        resp = await self._get(url, retries=2)
+        return resp.content, resp.headers.get("content-type")
 
     # ---------- Категории ----------
 

@@ -72,8 +72,8 @@ class Settings(BaseSettings):
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/130.0 Safari/537.36"
     )
-    parser_concurrency: int = 4
-    parser_delay_seconds: float = 0.3
+    parser_concurrency: int = 2
+    parser_delay_seconds: float = 0.7
     parser_timeout_seconds: float = 30
     parser_download_images: bool = True
     parser_auto_sync_hours: float = 0
